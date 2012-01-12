@@ -211,7 +211,7 @@ def get_or_create_key(key_name):
             nova_key = k
     if del_nova_key and nova_key:
         nova_key.delete()
-        time.sleep()
+        time.sleep(2)
         key_deleted = False
         while not key_deleted:
             go_on = False
