@@ -1,0 +1,25 @@
+[Admin]
+NOVA_PROJECT_ID= admin
+NOVA_USERNAME= admin
+NOVA_PASSWORD= password
+NOVA_URL= http://nova_url:5000/v2.0
+NOVA_VERSION= 1.1
+NOVA_REGION_NAME= RegionOne
+OS_AUTH_USER= admin
+OS_AUTH_KEY= password
+OS_AUTH_TENANT= 1
+OS_AUTH_URL= http://nova_url:5000/v2.0
+OS_AUTH_STRATEGY= keystone
+
+[User]
+NOVA_PROJECT_ID= user
+NOVA_USERNAME= user
+NOVA_PASSWORD= password
+NOVA_URL= http://nova_url:5000/v2.0
+NOVA_VERSION= 1.1
+NOVA_REGION_NAME= RegionOne
+OS_AUTH_USER= user
+OS_AUTH_KEY= password
+OS_AUTH_TENANT= 4
+OS_AUTH_URL= http://nova_url:5000/v2.0
+OS_AUTH_STRATEGY= keystone
