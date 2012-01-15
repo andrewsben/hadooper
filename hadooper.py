@@ -10,13 +10,34 @@ import time
 from novaclient.v1_1 import client
 
 rate_limit_sleep_time = 10
+floating_ips_max_check = 10
+
+
+def connect_to_server(server_ip, login_name, key_location, port=22):
+    try:
+        print server_ip
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        #ssh_key = paramiko.RSAKey.from_private_key_file(key_location)
+        ssh.connect(server_ip, username=login_name, key_filename=key_location)
+        print ssh.exec_command('ls')
+    except Exception as ex:
+        assert None, "Error in ssh connection: %s" % str(ex)
+
 
 def setup_hadoop(server_dict):
     print "do stuff"
 
-def create_sec_groups():
 
-    print "Creating security groups"
+def check_rate_limited(message):
+    redo = False
+    if str(message) == "This request was rate-limited. (HTTP 413)":
+        time.sleep(rate_limit_sleep_time)
+        redo = True
+    return redo
+
+
+def create_sec_groups(create_new):
 
     master_ports = [22, 9000, 9001, 50010, 50020, 50030, 50060, 50070, 50075, 50090]
     slave_ports = [22, 9000, 9001, 50010, 50020, 50030, 50060, 50070, 50075, 50090]
@@ -25,90 +46,107 @@ def create_sec_groups():
     hadoop_master = 'hadoop_master'
     hadoop_slave = 'hadoop_slave'
 
-    for sec_group in nc.security_groups.list():
-        if sec_group.name in [hadoop_master, hadoop_slave]:
-            sec_group_name = sec_group.name
-            sec_group.delete()
-            is_deleted = False
-            while not is_deleted:
-                if not any([sec_group_name == sg.name for sg in nc.security_groups.list()]):
-                    is_deleted = True
-                else:
-                    time.sleep(2)
+    if not create_new:
+        print "Creating security groups"
 
-    is_created = False
-    master_sec_group = nc.security_groups.create(hadoop_master, hadoop_master)
-    while not is_created:
-        if any([hadoop_master == sg.name for sg in nc.security_groups.list()]):
-            is_created = True
-        else:
-            time.sleep(2)
 
-    is_created = False
-    slave_sec_group = nc.security_groups.create(hadoop_slave, hadoop_slave)
-    while not is_created:
-        if any([hadoop_slave == sg.name for sg in nc.security_groups.list()]):
-            is_created = True
-        else:
-            time.sleep(2)
+        for sec_group in nc.security_groups.list():
+            if sec_group.name in [hadoop_master, hadoop_slave]:
+                sec_group_name = sec_group.name
+                sec_group.delete()
+                is_deleted = False
+                while not is_deleted:
+                    if not any([sec_group_name == sg.name for sg in nc.security_groups.list()]):
+                        is_deleted = True
+                    else:
+                        time.sleep(2)
 
-    #create master rules, watch for rate limit crap
-    for port in master_ports:
-        try:
-            nc.security_group_rules.create(master_sec_group.id, 'tcp', port, port, '%s' % cidr)
-        except Exception as ex:
-            if str(ex) == "This request was rate-limited. (HTTP 413)":
-                time.sleep(rate_limit_sleep_time)
-                nc.security_group_rules.create(master_sec_group.id, 'tcp', port, port, '%s' % cidr)
-
-    for port in slave_ports:
-        try:
-            nc.security_group_rules.create(slave_sec_group.id, 'tcp', port, port, '%s' % cidr)
-        except Exception as ex:
-            if str(ex) == "This request was rate-limited. (HTTP 413)":
-                time.sleep(rate_limit_sleep_time)
-                nc.security_group_rules.create(slave_sec_group.id, 'tcp', port, port, '%s' % cidr)
-
-    #probably should run back through all the rules for master_sec_group and slave_sec_group and verify that the rules are in 
-    #can do a call on master_sec_group.get() probably
-    time.sleep(rate_limit_sleep_time)
-
-    for sg in nc.security_groups.list():
-        if sg.name in [hadoop_master, hadoop_slave]:
-            if sg.name == hadoop_master:
-                master_sec_group = sg
+        is_created = False
+        master_sec_group = nc.security_groups.create(hadoop_master, hadoop_master)
+        while not is_created:
+            if any([hadoop_master == sg.name for sg in nc.security_groups.list()]):
+                is_created = True
             else:
-                slave_sec_group = sg
+                time.sleep(2)
 
-    master_after_ports = []
-    master_sec_group.get()
-    for rule in master_sec_group.rules:
-        master_after_ports.append(int(rule['from_port']))
+        is_created = False
+        slave_sec_group = nc.security_groups.create(hadoop_slave, hadoop_slave)
+        while not is_created:
+            if any([hadoop_slave == sg.name for sg in nc.security_groups.list()]):
+                is_created = True
+            else:
+                time.sleep(2)
 
-    slave_after_ports = []
-    slave_sec_group.get()
-    for rule in slave_sec_group.rules:
-        slave_after_ports.append(int(rule['from_port']))
-
-    for port in master_ports:
-        if master_after_ports.count(port) == 0:
-            #redo port
+        #create master rules, watch for rate limit crap
+        for port in master_ports:
             try:
                 nc.security_group_rules.create(master_sec_group.id, 'tcp', port, port, '%s' % cidr)
             except Exception as ex:
-                if str(ex) == "This request was rate-limited. (HTTP 413)":
-                    time.sleep(rate_limit_sleep_time)
+                if check_rate_limited(ex):
                     nc.security_group_rules.create(master_sec_group.id, 'tcp', port, port, '%s' % cidr)
+                else:
+                    assert None, str(ex)                
 
-    for port in slave_ports:
-        if slave_after_ports.count(port) == 0:
-            #redo port
+        for port in slave_ports:
             try:
                 nc.security_group_rules.create(slave_sec_group.id, 'tcp', port, port, '%s' % cidr)
             except Exception as ex:
-                if str(ex) == "This request was rate-limited. (HTTP 413)":
-                    time.sleep(rate_limit_sleep_time)
+                if check_rate_limited(ex):
                     nc.security_group_rules.create(slave_sec_group.id, 'tcp', port, port, '%s' % cidr)
+                else:
+                    assert None, str(ex)
+
+        time.sleep(rate_limit_sleep_time)
+
+        for sg in nc.security_groups.list():
+            if sg.name in [hadoop_master, hadoop_slave]:
+                if sg.name == hadoop_master:
+                    master_sec_group = sg
+                else:
+                    slave_sec_group = sg
+
+        master_after_ports = []
+        master_sec_group.get()
+        for rule in master_sec_group.rules:
+            master_after_ports.append(int(rule['from_port']))
+
+        slave_after_ports = []
+        slave_sec_group.get()
+        for rule in slave_sec_group.rules:
+            slave_after_ports.append(int(rule['from_port']))
+
+        for port in master_ports:
+            if master_after_ports.count(port) == 0:
+                #redo port
+                try:
+                    nc.security_group_rules.create(master_sec_group.id, 'tcp', port, port, '%s' % cidr)
+                except Exception as ex:
+                    if check_rate_limited(ex):
+                        nc.security_group_rules.create(master_sec_group.id, 'tcp', port, port, '%s' % cidr)
+                    else:
+                        assert None, str(ex)
+
+        for port in slave_ports:
+            if slave_after_ports.count(port) == 0:
+                #redo port
+                try:
+                    nc.security_group_rules.create(slave_sec_group.id, 'tcp', port, port, '%s' % cidr)
+                except Exception as ex:
+                    if check_rate_limited(ex):
+                        nc.security_group_rules.create(slave_sec_group.id, 'tcp', port, port, '%s' % cidr)
+                    else:
+                        assert None, str(ex)
+
+    else:
+        master_sec_group = ''
+        slave_sec_group = ''
+
+        for sec_group in nc.security_groups.list():
+            if sec_group.name == hadoop_master:
+                master_sec_group = sec_group
+            if sec_group.name == hadoop_slave:
+                slave_sec_group = sec_group
+
 
     return master_sec_group.name, slave_sec_group.name
 
@@ -167,27 +205,56 @@ def get_flavor(flavor_name):
     return False        
 
 
+def assign_floating_ip(server_name):
+    server = False
+    for s in nc.servers.list():
+		if s.name == server_name:
+			server = s
+
+    if server:
+        ip = get_floating_ip()
+        if ip:
+            server.add_floating_ip(ip)
+            return ip
+
+    return False
+
 def get_floating_ip():
 
+    dont_use = ['50.56.12.240', '50.56.12.241', '50.56.12.242', '50.56.12.243']
+    
     for floating_ip in nc.floating_ips.list():
-        if floating_ip.instance_id == None:
-            return floating_ip
+        if floating_ip.instance_id == None and str(floating_ip.ip) not in dont_use:
+            return floating_ip.ip
 
     try:
         quota_ips = int(nc.quotas.get(args['tenant']).floating_ips)
         if (len(nc.floating_ips.list()) < quota_ips):
-            return nc.floating_ips.create()
-
-    except Exception as except_msg:
-        error_msg = str(except_msg)
-        if error_msg == "No more floating ips available. (HTTP 400)":
-            return False
-        elif error_msg == "Access was denied to this resource. (HTTP 403)":
-            try:
+            for x in range(floating_ips_max_check):
                 floating_ip = nc.floating_ips.create()
-                return floating_ip
+                if floating_ip.ip not in dont_use:
+                    return floating_ip.ip
+
+    except Exception as ex:
+        if str(ex) == "No more floating ips available. (HTTP 400)":
+            return False
+        elif str(ex) == "Access was denied to this resource. (HTTP 403)":
+            try:
+                for x in range(floating_ips_max_check):
+                    floating_ip = nc.floating_ips.create()
+                    if floating_ip.ip not in dont_use:
+                        return floating_ip.ip
             except:
                 return False
+        else:
+            if check_rate_limited(ex):
+                try:
+                    for x in range(floating_ips_max_check):
+                        floating_ip = nc.floating_ips.create()
+                        if floating_ip.ip not in dont_use:
+                            return floating_ip.ip
+                except:
+                    return False
 
     return False
 
@@ -270,10 +337,7 @@ def boot_instance(image, flavor, server_number, is_master, key_name, sec_group):
             while len(server.networks) == 0:
                 time.sleep(3)
                 server.get()
-            floating_ip = get_floating_ip()
-            if floating_ip:
-                server.add_floating_ip(floating_ip)
-            return True, server.name,floating_ip.ip
+            return True, server.name,server.networks['private'][0]
         else:
             return False, '', ''
 
@@ -308,7 +372,9 @@ if __name__ == '__main__':
     parser.add_argument('-k', '--key', help='ssh key to use or create, defaults to hadooper_key', default='hadooper_key')
     parser.add_argument('-f', '--flavor', help='default = m1.medium', default='m1.medium')
     parser.add_argument('-i', '--image', help='default = oneiric-server-cloudimg-amd64', default='oneiric-server-cloudimg-amd64')
+    parser.add_argument('-l', '--login', help='user to login to image, default = ubuntu', default='ubuntu')
     parser.add_argument('-c', '--cluster', help='cluster size as int, default 4', type=int, default=4)
+    parser.add_argument('-sg', '--security', help='hadooper_master and hadooper_slave security groups alone, default False', type=bool, default=False)
     args = vars(parser.parse_args())
 
     if not args['password']:
@@ -321,10 +387,12 @@ if __name__ == '__main__':
 
     nc = return_nova_object(args)
 
-    master_sec_group_id, slave_sec_group_id = create_sec_groups()
+    
+
+    master_sec_group_id, slave_sec_group_id = create_sec_groups(args['security'])
 
     nova_key = get_or_create_key(args['key'])
-
+    
     image = get_image(args['image'])
     assert image, "Image not found"
     
@@ -335,7 +403,21 @@ if __name__ == '__main__':
     servers = {}
     for x in range(args['cluster']):
         worked, server_name, server_ip = boot_instance(image, flavor, x, is_master, nova_key.uuid, is_master and [master_sec_group_id] or [slave_sec_group_id])
+        ext_ip = ''
+        if is_master:
+            #assign a floating ip to master, check against bad ip list
+            assign_floating_ip_return = assign_floating_ip(server_name)
+            if assign_floating_ip_return:
+                ext_ip = assign_floating_ip_return
         if worked:
-            servers[x] = {'name': server_name, 'type': is_master and 'master' or 'slave', 'ip': server_ip}
+            servers[x] = {'name': server_name, 'type': is_master and 'master' or 'slave', 'ip': server_ip, 'ext_ip': ext_ip}
         is_master = False
+
     print servers
+
+    for x in servers.keys():
+        if servers[x]['type'] == 'master':
+            server_ip =  servers[x]['ext_ip']
+            login_name = args['login']
+            key_location = args['key']
+            connect_to_server(server_ip, login_name, key_location)
