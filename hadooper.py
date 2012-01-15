@@ -46,7 +46,7 @@ def create_sec_groups(create_new):
     hadoop_master = 'hadoop_master'
     hadoop_slave = 'hadoop_slave'
 
-    if not create_new:
+    if create_new:
         print "Creating security groups"
 
 
@@ -314,8 +314,9 @@ def check_booted(server):
     except Exception as exception:
         print "Exception in get_console_output"
         print exception
-        return false, exception
+        return False, exception
 
+    return False
 
 
 def boot_instance(image, flavor, server_number, is_master, key_name, sec_group):
@@ -374,7 +375,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--image', help='default = oneiric-server-cloudimg-amd64', default='oneiric-server-cloudimg-amd64')
     parser.add_argument('-l', '--login', help='user to login to image, default = ubuntu', default='ubuntu')
     parser.add_argument('-c', '--cluster', help='cluster size as int, default 4', type=int, default=4)
-    parser.add_argument('-sg', '--security', help='hadooper_master and hadooper_slave security groups alone, default False', type=bool, default=False)
+    parser.add_argument('-sg', '--security', help='Redo hadooper_master and hadooper_slave security groups, default True', type=bool, default=True)
     args = vars(parser.parse_args())
 
     if not args['password']:
@@ -413,7 +414,8 @@ if __name__ == '__main__':
             servers[x] = {'name': server_name, 'type': is_master and 'master' or 'slave', 'ip': server_ip, 'ext_ip': ext_ip}
         is_master = False
 
-    print servers
+    server_config_file = open('servers.conf','w')
+    server_config_file.write(servers)
 
     for x in servers.keys():
         if servers[x]['type'] == 'master':
