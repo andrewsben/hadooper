@@ -14,6 +14,57 @@ rate_limit_sleep_time = 10
 floating_ips_max_check = 10
 
 
+def create_conf_files(servers):
+    
+    master_name = ''
+    for x in servers.keys():
+        if servers[x]['type'] == 'master':
+            master_name = servers[x]['name']
+
+    hdfs = open('Transfer/hdfs-site.xml','w')
+    hdfs.write("""<?xml version="1.0"?>
+        <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+
+        <configuration>
+            <property>
+                <name>dfs.replication</name>
+                <value>%d</value>
+            </property>
+        </configuration>
+        """ % len(servers))
+    hdfs.close()
+
+    mapred = open('Transfer/mapred-site.xml','w')
+    mapred.write("""<?xml version="1.0"?>
+        <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+
+        <configuration>
+            <property>
+                <name>mapred.job.tracker</name>
+                <value>%s:54311</value>
+            </property>
+        </configuration>
+        """ % master_name)
+    mapred.close()    
+
+    core = open('Transfer/core-site.xml','w')
+    core.write("""<?xml version="1.0"?>
+        <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+
+        <configuration>
+            <property>
+                <name>hadoop.tmp.dir</name>
+                <value>/app/hadoop/tmp</value>
+            </property>
+
+            <property>
+                <name>fs.default.name</name>
+                <value>hdfs://%s:54310</value>
+            </property>
+        </configuration>""" % master_name)
+    core.close()
+
+
 def connect_to_server(server_ip, login_name, key_location, port=22):
     
     connection_good = False
@@ -441,7 +492,7 @@ if __name__ == '__main__':
 
     if not os.path.exists('Transfer'):
         os.mkdir('Transfer')
-    transfer_files_to_keep = ['setup.sh', 'bashrc_add', 'core-site.xml', 'mapred-site.xml', 'hdfs-site.xml', 'hadoop-env.sh']
+    transfer_files_to_keep = ['setup_master.sh', 'setup_slave.sh', 'bashrc_add', 'hadoop-env.sh']
     for file in glob.glob('Transfer/*'):
         if file.split('/')[-1] not in transfer_files_to_keep:
             os.system('rm %s' % file)
@@ -464,7 +515,7 @@ if __name__ == '__main__':
         for k in servers[x].keys():
             if k != 'name':
                 server_config_file.write('%s= %s\n' % (k, servers[x][k]))
-        server_config_file.write('\n')
+        server_config_file.write('login= %s\n\n' % (args['login']))
 
         if servers[x]['type'] == 'master':
             masters_file.write('%s\n' % servers[x]['name'])
@@ -473,7 +524,8 @@ if __name__ == '__main__':
             login_name = args['login']
             key_location = args['key']
 
-    slaves_file.close()        
+    slaves_file.close()
+    create_conf_files(servers)
     ssh, sftp = connect_to_server(server_ip, login_name, key_location)        
 
     host_file_additions.close()

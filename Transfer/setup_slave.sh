@@ -42,7 +42,10 @@ cd /usr/local
 sudo wget http://mirrors.gigenet.com/apache//hadoop/core/hadoop-1.0.0/hadoop-1.0.0.tar.gz
 sudo tar xzf hadoop-1.0.0.tar.gz
 sudo mv hadoop-1.0.0 hadoop
-sudo chown -R hduser:hadoop hadoop
+cd ~/Transfer
+sudo cp slaves /usr/local/hadoop/conf/
+sudo cp masters /usr/local/hadoop/conf/
+sudo chown -R hduser:hadoop /usr/local/hadoop
 
 cd ~/Transfer
 sudo chown ubuntu /home/hduser/.bashrc
