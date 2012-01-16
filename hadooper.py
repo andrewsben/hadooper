@@ -2,6 +2,7 @@
 
 import argparse
 import ConfigParser
+import glob
 import os
 import paramiko
 import random
@@ -14,19 +15,31 @@ floating_ips_max_check = 10
 
 
 def connect_to_server(server_ip, login_name, key_location, port=22):
-    try:
-        print server_ip
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        #ssh_key = paramiko.RSAKey.from_private_key_file(key_location)
-        ssh.connect(server_ip, username=login_name, key_filename=key_location)
-        print ssh.exec_command('ls')
-    except Exception as ex:
-        assert None, "Error in ssh connection: %s" % str(ex)
+    
+    connection_good = False
+    while not connection_good:
+        try:
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(server_ip, username=login_name, key_filename=key_location)        
+
+            transport = paramiko.Transport((server_ip, port))
+            transport.connect(username = login_name, pkey = paramiko.RSAKey.from_private_key_file(key_location))
+            sftp = paramiko.SFTPClient.from_transport(transport)
+
+            return ssh, sftp
+        except Exception as ex:
+            print "Error in ssh connection: %s" % str(ex)
 
 
-def setup_hadoop(server_dict):
-    print "do stuff"
+def setup_hadoop(ssh, sftp):
+
+    sftp = ssh.open_sftp()
+    sftp.mkdir('Transfer')
+    for file_name in glob.glob('Transfer/*'):
+        sftp.put(file_name, file_name)
+        sftp.chmod(file_name, 0700)
+    print ssh.exec_command('ls')
 
 
 def check_rate_limited(message):
@@ -46,9 +59,24 @@ def create_sec_groups(create_new):
     hadoop_master = 'hadoop_master'
     hadoop_slave = 'hadoop_slave'
 
+    if create_new.lower() in ['0', 'f', 'false', 'no', 'off']:
+        create_new = False
+
+    if not create_new:
+        master_sec_group = ''
+        slave_sec_group = ''
+
+        for sec_group in nc.security_groups.list():
+            if sec_group.name == hadoop_master:
+                master_sec_group = sec_group
+            if sec_group.name == hadoop_slave:
+                slave_sec_group = sec_group
+        if master_sec_group == '' or slave_sec_group == '':
+            print "Security groups not present, need to create"
+            create_new = True
+
     if create_new:
         print "Creating security groups"
-
 
         for sec_group in nc.security_groups.list():
             if sec_group.name in [hadoop_master, hadoop_slave]:
@@ -136,16 +164,6 @@ def create_sec_groups(create_new):
                         nc.security_group_rules.create(slave_sec_group.id, 'tcp', port, port, '%s' % cidr)
                     else:
                         assert None, str(ex)
-
-    else:
-        master_sec_group = ''
-        slave_sec_group = ''
-
-        for sec_group in nc.security_groups.list():
-            if sec_group.name == hadoop_master:
-                master_sec_group = sec_group
-            if sec_group.name == hadoop_slave:
-                slave_sec_group = sec_group
 
 
     return master_sec_group.name, slave_sec_group.name
@@ -372,10 +390,10 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--server', default=None)
     parser.add_argument('-k', '--key', help='ssh key to use or create, defaults to hadooper_key', default='hadooper_key')
     parser.add_argument('-f', '--flavor', help='default = m1.medium', default='m1.medium')
-    parser.add_argument('-i', '--image', help='default = oneiric-server-cloudimg-amd64', default='oneiric-server-cloudimg-amd64')
+    parser.add_argument('-i', '--image', help='default = natty-server-cloudimg-amd64', default='natty-server-cloudimg-amd64')
     parser.add_argument('-l', '--login', help='user to login to image, default = ubuntu', default='ubuntu')
     parser.add_argument('-c', '--cluster', help='cluster size as int, default 4', type=int, default=4)
-    parser.add_argument('-sg', '--security', help='Redo hadooper_master and hadooper_slave security groups, default True', type=bool, default=True)
+    parser.add_argument('-sg', '--security', help='Redo hadooper_master and hadooper_slave security groups, default True', default=True)
     args = vars(parser.parse_args())
 
     if not args['password']:
@@ -387,11 +405,7 @@ if __name__ == '__main__':
         args['server'] = novaconfig['nova_url']
 
     nc = return_nova_object(args)
-
-    
-
     master_sec_group_id, slave_sec_group_id = create_sec_groups(args['security'])
-
     nova_key = get_or_create_key(args['key'])
     
     image = get_image(args['image'])
@@ -406,20 +420,37 @@ if __name__ == '__main__':
         worked, server_name, server_ip = boot_instance(image, flavor, x, is_master, nova_key.uuid, is_master and [master_sec_group_id] or [slave_sec_group_id])
         ext_ip = ''
         if is_master:
-            #assign a floating ip to master, check against bad ip list
             assign_floating_ip_return = assign_floating_ip(server_name)
             if assign_floating_ip_return:
                 ext_ip = assign_floating_ip_return
+
         if worked:
             servers[x] = {'name': server_name, 'type': is_master and 'master' or 'slave', 'ip': server_ip, 'ext_ip': ext_ip}
         is_master = False
 
-    server_config_file = open('servers.conf','w')
-    server_config_file.write(servers)
+    if not os.path.exists('Transfer'):
+        os.mkdir('Transfer')
+    transfer_files_to_keep = ['setup.sh', 'bashrc_add', 'core-site.xml', 'mapred-site.xml', 'hdfs-site.xml', 'hadoop-env.sh']
+    for file in glob.glob('Transfer/*'):
+        if file.split('/')[-1] not in transfer_files_to_keep:
+            os.system('rm %s' % file)
+    server_config_file = open('Transfer/servers.conf','w')
+    os.system('cp %s Transfer/ssh_key' % args['key'])
+    os.system('cp %s Transfer/ssh_key.pub' % args['key'])
+    ssh = ''
+
 
     for x in servers.keys():
+
+        server_config_file.write('[%s]\n' % servers[x]['name'])
+        for k in servers[x].keys():
+            if k != 'name':
+                server_config_file.write('%s= %s\n' % (k, servers[x][k]))
+        server_config_file.write('\n')
         if servers[x]['type'] == 'master':
             server_ip =  servers[x]['ext_ip']
             login_name = args['login']
             key_location = args['key']
-            connect_to_server(server_ip, login_name, key_location)
+            ssh, sftp = connect_to_server(server_ip, login_name, key_location)
+    server_config_file.close()
+    setup_hadoop(ssh, sftp)
