@@ -91,7 +91,7 @@ def setup_hadoop(ssh, sftp):
     for file_name in glob.glob('Transfer/*'):
         sftp.put(file_name, file_name)
         sftp.chmod(file_name, 0700)
-    print ssh.exec_command('ls')
+    stdin, stdout, stderr = ssh.exec_command('~/Transfer/setup_master.sh')
 
 
 def check_rate_limited(message):
@@ -492,7 +492,7 @@ if __name__ == '__main__':
 
     if not os.path.exists('Transfer'):
         os.mkdir('Transfer')
-    transfer_files_to_keep = ['setup_master.sh', 'setup_slave.sh', 'bashrc_add', 'hadoop-env.sh']
+    transfer_files_to_keep = ['setup_master.sh', 'setup_slave.sh', 'bashrc_add', 'hadoop-env.sh', 'local_setup.py']
     for file in glob.glob('Transfer/*'):
         if file.split('/')[-1] not in transfer_files_to_keep:
             os.system('rm %s' % file)

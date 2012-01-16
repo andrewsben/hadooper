@@ -59,6 +59,9 @@ sudo chown hduser:hadoop /app/hadoop/tmp
 
 sudo su -c "cat /home/ubuntu/Transfer/add_to_hosts >> /etc/hosts"
 
+cd ~
+python Transfer/local_setup.py
+
 cd /usr/local/hadoop
 sudo su hduser -c '/usr/local/hadoop/bin/hadoop namenode -format'
 sudo su hduser -c '/usr/local/hadoop/bin/start-all.sh'
