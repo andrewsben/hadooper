@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 
 import argparse
 import ConfigParser
@@ -86,13 +86,15 @@ def connect_to_server(server_ip, login_name, key_location, port=22):
 
 def setup_hadoop(ssh, sftp):
 
+    print "Setting up hadoop servers, this could take a little bit"
     sftp = ssh.open_sftp()
     sftp.mkdir('Transfer')
     for file_name in glob.glob('Transfer/*'):
         sftp.put(file_name, file_name)
         sftp.chmod(file_name, 0700)
     stdin, stdout, stderr = ssh.exec_command('~/Transfer/setup_master.sh')
-
+    channel = stdout.channel
+    status = channel.recv_exit_status()
 
 def check_rate_limited(message):
     redo = False
