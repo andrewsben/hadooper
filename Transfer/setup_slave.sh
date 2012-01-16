@@ -1,5 +1,7 @@
 #!/bin/bash
 
+
+
 sudo mv /usr/bin/ssh /usr/bin/ssh-orig
 sudo su -c "echo '#
 ssh-orig -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \"\$@\"
@@ -38,16 +40,14 @@ sudo chown -R hduser:hadoop /home/hduser
 
 
 
-cd /usr/local
-sudo wget http://mirrors.gigenet.com/apache//hadoop/core/hadoop-1.0.0/hadoop-1.0.0.tar.gz
-sudo tar xzf hadoop-1.0.0.tar.gz
-sudo mv hadoop-1.0.0 hadoop
+
 cd ~/Transfer
+sudo tar xzf hadoop-1.0.0.tar.gz
+sudo mv hadoop-1.0.0 /usr/local/hadoop
 sudo cp slaves /usr/local/hadoop/conf/
 sudo cp masters /usr/local/hadoop/conf/
 sudo chown -R hduser:hadoop /usr/local/hadoop
 
-cd ~/Transfer
 sudo chown ubuntu /home/hduser/.bashrc
 cat bashrc_add >> /home/hduser/.bashrc
 sudo chown -R hduser:hadoop /home/hduser
@@ -58,3 +58,6 @@ sudo mkdir -p /app/hadoop/tmp
 sudo chown hduser:hadoop /app/hadoop/tmp
 
 sudo su -c "cat /home/ubuntu/Transfer/add_to_hosts >> /etc/hosts"
+
+sudo mv /usr/bin/ssh-orig /usr/bin/ssh 
+exit $?

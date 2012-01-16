@@ -20,6 +20,26 @@ def create_conf_files(servers):
     for x in servers.keys():
         if servers[x]['type'] == 'master':
             master_name = servers[x]['name']
+        else:
+            outputfile = open('Transfer/local_setup_%s.sh' % servers[x]['name'], 'w')
+            outputfile.write("""#!/bin/bash
+
+sudo mv /usr/bin/ssh /usr/bin/ssh-orig
+sudo su -c "echo '#
+ssh-orig -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \"\$@\"
+' > /usr/bin/ssh"
+sudo chmod 777 /usr/bin/ssh
+
+ip=%s
+
+cd ~
+scp -i Transfer/ssh_key -r Transfer $ip:
+ssh -i Transfer/ssh_key $ip 'Transfer/setup_slave.sh'
+
+sudo mv /usr/bin/ssh-orig /usr/bin/ssh
+exit $?
+""" % servers[x]['ip'])
+            outputfile.close()
 
     hdfs = open('Transfer/hdfs-site.xml','w')
     hdfs.write("""<?xml version="1.0"?>
@@ -65,36 +85,69 @@ def create_conf_files(servers):
     core.close()
 
 
-def connect_to_server(server_ip, login_name, key_location, port=22):
-    
+def connect_to_server(ssh_connect_info, port=22, get_ftp=True):
+
+    server_ip = ssh_connect_info['ip']
+    login_name = ssh_connect_info['login']
+    key_location = ssh_connect_info['key']
     connection_good = False
     while not connection_good:
         try:
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(server_ip, username=login_name, key_filename=key_location)        
+            ssh.connect(server_ip, username=login_name, key_filename=key_location)
 
-            transport = paramiko.Transport((server_ip, port))
-            transport.connect(username = login_name, pkey = paramiko.RSAKey.from_private_key_file(key_location))
-            sftp = paramiko.SFTPClient.from_transport(transport)
-
-            return ssh, sftp
+            if get_ftp:
+                transport = paramiko.Transport((server_ip, port))
+                transport.connect(username = login_name, pkey = paramiko.RSAKey.from_private_key_file(key_location))
+                sftp = paramiko.SFTPClient.from_transport(transport)
+                return ssh, sftp
+            else:
+                return ssh                
         except Exception as ex:
-            print "Error in ssh connection: %s" % str(ex)
+            print "Error in ssh connection (will retry in 2 sec): %s" % str(ex)
             time.sleep(2)
 
 
-def setup_hadoop(ssh, sftp):
+def setup_hadoop(ssh, sftp, servers, ssh_connect_info):
 
-    print "Setting up hadoop servers, this could take a little bit"
+    print "Transferring files to cluster"
     sftp = ssh.open_sftp()
     sftp.mkdir('Transfer')
     for file_name in glob.glob('Transfer/*'):
         sftp.put(file_name, file_name)
         sftp.chmod(file_name, 0700)
+    time.sleep(10)
+
+    print "Downloading external files on master server"
+    stdin, stdout, stderr = ssh.exec_command('~/Transfer/get_files.sh')
+    channel = stdout.channel
+    status = channel.recv_exit_status()
+    ssh.close()
+    channel.close()
+
+    print "Setting up servers, this could take a little bit"
+    
+    for k in servers.keys():
+        if servers[k]['type'] == 'slave':
+            print "Setting up %s" % servers[k]['name']
+            ssh = connect_to_server(ssh_connect_info, get_ftp=False)
+            stdin, stdout, stderr = ssh.exec_command('~/Transfer/local_setup_%s.sh' % servers[k]['name'])
+            channel = stdout.channel
+            status = channel.recv_exit_status()
+            ssh.close()
+            channel.close()
+
+    print "Setting up master"
+    ssh = connect_to_server(ssh_connect_info, get_ftp=False)
     stdin, stdout, stderr = ssh.exec_command('~/Transfer/setup_master.sh')
     channel = stdout.channel
     status = channel.recv_exit_status()
+    ssh.close()
+    channel.close()
+
+    print "Servers have the boot."
+
 
 def check_rate_limited(message):
     redo = False
@@ -494,7 +547,7 @@ if __name__ == '__main__':
 
     if not os.path.exists('Transfer'):
         os.mkdir('Transfer')
-    transfer_files_to_keep = ['setup_master.sh', 'setup_slave.sh', 'bashrc_add', 'hadoop-env.sh', 'local_setup.py']
+    transfer_files_to_keep = ['setup_master.sh', 'setup_slave.sh', 'bashrc_add', 'hadoop-env.sh', 'get_files.sh']
     for file in glob.glob('Transfer/*'):
         if file.split('/')[-1] not in transfer_files_to_keep:
             os.system('rm %s' % file)
@@ -528,8 +581,9 @@ if __name__ == '__main__':
 
     slaves_file.close()
     create_conf_files(servers)
-    ssh, sftp = connect_to_server(server_ip, login_name, key_location)        
+    ssh_connect_info = {'ip': server_ip, 'login': login_name, 'key': key_location}
+    ssh, sftp = connect_to_server(ssh_connect_info ) 
 
     host_file_additions.close()
     server_config_file.close()
-    setup_hadoop(ssh, sftp)
+    setup_hadoop(ssh, sftp, servers, ssh_connect_info)

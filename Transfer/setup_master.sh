@@ -6,6 +6,7 @@ ssh-orig -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \"\$@\"
 ' > /usr/bin/ssh"
 sudo chmod 777 /usr/bin/ssh
 
+
 cat << EOD | sudo debconf-set-selections
 sun-java5-jdk shared/accepted-sun-dlj-v1-1 select true
 sun-java5-jre shared/accepted-sun-dlj-v1-1 select true
@@ -38,11 +39,9 @@ sudo chown -R hduser:hadoop /home/hduser
 
 
 
-cd /usr/local
-sudo wget http://mirrors.gigenet.com/apache//hadoop/core/hadoop-1.0.0/hadoop-1.0.0.tar.gz
-sudo tar xzf hadoop-1.0.0.tar.gz
-sudo mv hadoop-1.0.0 hadoop
 cd ~/Transfer
+sudo tar xzf hadoop-1.0.0.tar.gz
+sudo mv hadoop-1.0.0 /usr/local/hadoop
 sudo cp slaves /usr/local/hadoop/conf/
 sudo cp masters /usr/local/hadoop/conf/
 sudo chown -R hduser:hadoop /usr/local/hadoop
@@ -59,9 +58,9 @@ sudo chown hduser:hadoop /app/hadoop/tmp
 
 sudo su -c "cat /home/ubuntu/Transfer/add_to_hosts >> /etc/hosts"
 
-cd ~
-/usr/bin/python /home/ubuntu/Transfer/local_setup.py
-
 cd /usr/local/hadoop
 sudo su hduser -c '/usr/local/hadoop/bin/hadoop namenode -format'
 sudo su hduser -c '/usr/local/hadoop/bin/start-all.sh'
+
+sudo mv /usr/bin/ssh-orig /usr/bin/ssh 
+exit $?
