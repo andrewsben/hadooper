@@ -2,9 +2,9 @@
 
 sudo mv /usr/bin/ssh /usr/bin/ssh-orig
 sudo su -c "echo '#
-ssh.orig -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \"\$@\"
+ssh-orig -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \"\$@\"
 ' > /usr/bin/ssh"
-
+sudo chmod 777 /usr/bin/ssh
 
 cat << EOD | sudo debconf-set-selections
 sun-java5-jdk shared/accepted-sun-dlj-v1-1 select true
@@ -34,7 +34,7 @@ sudo chown ubuntu:ubuntu /home/hduser/.ssh/authorized_keys
 cat Transfer/ssh_key.pub > /home/hduser/.ssh/authorized_keys
 sudo cp /home/ubuntu/Transfer/ssh_key /home/hduser/.ssh/id_rsa
 cp /home/ubuntu/Transfer/ssh_key /home/ubuntu/.ssh/id_rsa
-sudo chown -r hduser:hadoop /home/hduser
+sudo chown -R hduser:hadoop /home/hduser
 
 
 
@@ -54,6 +54,7 @@ sudo cp hadoop-env.sh /usr/local/hadoop/conf/
 sudo mkdir -p /app/hadoop/tmp
 sudo chown hduser:hadoop /app/hadoop/tmp
 
+sudo su -c "cat /home/ubuntu/Transfer/add_to_hosts >> /etc/hosts"
 
 cd /usr/local/hadoop
 sudo su hduser -c '/usr/local/hadoop/bin/hadoop namenode -format'

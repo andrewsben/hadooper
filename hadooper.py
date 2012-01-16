@@ -30,6 +30,7 @@ def connect_to_server(server_ip, login_name, key_location, port=22):
             return ssh, sftp
         except Exception as ex:
             print "Error in ssh connection: %s" % str(ex)
+            time.sleep(2)
 
 
 def setup_hadoop(ssh, sftp):
@@ -360,8 +361,18 @@ def boot_instance(image, flavor, server_number, is_master, key_name, sec_group):
         else:
             return False, '', ''
 
-    except Exception as except_msg:
-        assert None, str(except_msg)
+    except Exception as ex:
+        
+        if check_rate_limited(ex):
+            server = nc.servers.create(
+                        image=image,
+                        flavor=flavor,
+                        name=server_name,
+                        key_name=key_name,
+                        security_groups=sec_group
+                        )
+        else:
+            assert None, str(ex)
         except_stuff = """
         quota_exceeded = "InstanceLimitExceeded: Instance quota "
         quota_exceeded += "exceeded. You cannot run any "
@@ -436,21 +447,35 @@ if __name__ == '__main__':
             os.system('rm %s' % file)
     server_config_file = open('Transfer/servers.conf','w')
     os.system('cp %s Transfer/ssh_key' % args['key'])
-    os.system('cp %s Transfer/ssh_key.pub' % args['key'])
+    os.system('cp %s.pub Transfer/ssh_key.pub' % args['key'])
     ssh = ''
 
+    host_file_additions = open('Transfer/add_to_hosts','w')
+    masters_file = open('Transfer/masters','w')
+    slaves_file = open('Transfer/slaves','w')
 
+    master_server = ''
     for x in servers.keys():
 
+        slaves_file.write('%s\n' % servers[x]['name'])
+        host_file_additions.write('%s   %s\n' % (servers[x]['ip'], servers[x]['name']))
         server_config_file.write('[%s]\n' % servers[x]['name'])
+
         for k in servers[x].keys():
             if k != 'name':
                 server_config_file.write('%s= %s\n' % (k, servers[x][k]))
         server_config_file.write('\n')
+
         if servers[x]['type'] == 'master':
+            masters_file.write('%s\n' % servers[x]['name'])
+            masters_file.close()
             server_ip =  servers[x]['ext_ip']
             login_name = args['login']
             key_location = args['key']
-            ssh, sftp = connect_to_server(server_ip, login_name, key_location)
+
+    slaves_file.close()        
+    ssh, sftp = connect_to_server(server_ip, login_name, key_location)        
+
+    host_file_additions.close()
     server_config_file.close()
     setup_hadoop(ssh, sftp)
