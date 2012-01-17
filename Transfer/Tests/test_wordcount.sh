@@ -1,5 +1,6 @@
 #!/bin/bash
 
+cd ~
 sudo rm -rf Books
 mkdir Books
 cd Books
@@ -20,3 +21,5 @@ sudo rm -rf Books
 cd /usr/local/hadoop
 sudo su hduser -c 'bin/hadoop jar hadoop*examples*.jar wordcount  /user/hduser/Books /user/hduser/Books_Output'
 sudo su hduser -c 'bin/hadoop job -history all /user/hduser/Books_Output' > ~/Reports/wordcdount.results
+
+exit $?
