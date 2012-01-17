@@ -108,15 +108,33 @@ def connect_to_server(ssh_connect_info, port=22, get_ftp=True):
             print "Error in ssh connection (will retry in 2 sec): %s" % str(ex)
             time.sleep(2)
 
+def run_tests(ssh_connect_info):
+
+    for file in glob.glob('Transfer/Tests/*'):
+        print "Running test %s" % file.split('/')[-1]
+        outputfile = open('Results/%s.output' % file.split('/')[-1].split('.')[0], 'w')
+        ssh = connect_to_server(ssh_connect_info, get_ftp=False)
+        stdin, stdout, stderr = ssh.exec_command('~/%s' % file)
+        channel = stdout.channel
+        status = channel.recv_exit_status()
+        for line in stdout.readlines():
+            print line
+            outputfile.write(line)
+        outputfile.close()    
+        ssh.close()
+        channel.close()
+
 
 def setup_hadoop(ssh, sftp, servers, ssh_connect_info):
 
     print "Transferring files to cluster"
     sftp = ssh.open_sftp()
     sftp.mkdir('Transfer')
-    for file_name in glob.glob('Transfer/*'):
-        sftp.put(file_name, file_name)
-        sftp.chmod(file_name, 0700)
+    for root, dirnames, filenames in os.walk('Transfer'):
+        if root !="Transfer":
+            sftp.mkdir(root)
+        for file_name in filenames:
+            sftp.put('%s/%s' % (root, file_name), '%s/%s' % (root, file_name))
     time.sleep(10)
 
     print "Downloading external files on master server"
@@ -547,7 +565,7 @@ if __name__ == '__main__':
 
     if not os.path.exists('Transfer'):
         os.mkdir('Transfer')
-    transfer_files_to_keep = ['setup_master.sh', 'setup_slave.sh', 'bashrc_add', 'hadoop-env.sh', 'get_files.sh']
+    transfer_files_to_keep = ['setup_master.sh', 'setup_slave.sh', 'bashrc_add', 'hadoop-env.sh', 'get_files.sh', 'Tests']
     for file in glob.glob('Transfer/*'):
         if file.split('/')[-1] not in transfer_files_to_keep:
             os.system('rm %s' % file)
@@ -587,3 +605,4 @@ if __name__ == '__main__':
     host_file_additions.close()
     server_config_file.close()
     setup_hadoop(ssh, sftp, servers, ssh_connect_info)
+    run_tests(ssh_connect_info)

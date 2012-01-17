@@ -1,5 +1,7 @@
 #!/bin/bash
 
+mkdir ~/Reports
+
 sudo mv /usr/bin/ssh /usr/bin/ssh-orig
 sudo su -c "echo '#
 ssh-orig -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \"\$@\"
