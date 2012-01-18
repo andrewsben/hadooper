@@ -8,6 +8,7 @@ import paramiko
 import random
 import sys
 import time
+import datetime
 from novaclient.v1_1 import client
 
 rate_limit_sleep_time = 10
@@ -110,19 +111,40 @@ def connect_to_server(ssh_connect_info, port=22, get_ftp=True):
 
 def run_tests(ssh_connect_info):
 
+    print "Starting test"
+    time.sleep(60)
+
     for file in glob.glob('Transfer/Tests/*'):
         print "Running test %s" % file.split('/')[-1]
-        outputfile = open('Results/%s.output' % file.split('/')[-1].split('.')[0], 'w')
         ssh = connect_to_server(ssh_connect_info, get_ftp=False)
         stdin, stdout, stderr = ssh.exec_command('~/%s' % file)
         channel = stdout.channel
         status = channel.recv_exit_status()
-        for line in stdout.readlines():
-            print line
-            outputfile.write(line)
-        outputfile.close()    
+        stdin.channel.shutdown_write()
         ssh.close()
         channel.close()
+
+    ssh = connect_to_server(ssh_connect_info, get_ftp=False)
+    stdin, stdout, stderr = ssh.exec_command('~/Transfer/get_job_results.py')
+    channel = stdout.channel
+    status = channel.recv_exit_status()
+    stdin.channel.shutdown_write()
+    ssh.close()
+    channel.close()
+
+
+def get_results(ssh_connect_info):
+
+    print "Getting test results"
+    report_file = 'Reports/%s-%s.tar' % (str(datetime.date.today()), str(time.time()).split('.')[0])
+    if not os.path.exists('Reports'):
+        os.mkdir('Reports')
+        
+    ssh, sftp = connect_to_server(ssh_connect_info)
+    
+    sftp.get('Reports/reports.tar', '%s' % (report_file))
+    sftp.close()
+    ssh.close()
 
 
 def setup_hadoop(ssh, sftp, servers, ssh_connect_info):
@@ -135,6 +157,7 @@ def setup_hadoop(ssh, sftp, servers, ssh_connect_info):
             sftp.mkdir(root)
         for file_name in filenames:
             sftp.put('%s/%s' % (root, file_name), '%s/%s' % (root, file_name))
+            sftp.chmod('%s/%s' % (root, file_name), 0700)
     time.sleep(10)
 
     print "Downloading external files on master server"
@@ -164,7 +187,7 @@ def setup_hadoop(ssh, sftp, servers, ssh_connect_info):
     ssh.close()
     channel.close()
 
-    print "Servers have the boot."
+    print "Servers booted and setup."
 
 
 def check_rate_limited(message):
@@ -565,7 +588,7 @@ if __name__ == '__main__':
 
     if not os.path.exists('Transfer'):
         os.mkdir('Transfer')
-    transfer_files_to_keep = ['setup_master.sh', 'setup_slave.sh', 'bashrc_add', 'hadoop-env.sh', 'get_files.sh', 'Tests']
+    transfer_files_to_keep = ['setup_master.sh', 'setup_slave.sh', 'bashrc_add', 'hadoop-env.sh', 'get_files.sh', 'Tests', 'get_job_results.py']
     for file in glob.glob('Transfer/*'):
         if file.split('/')[-1] not in transfer_files_to_keep:
             os.system('rm %s' % file)
@@ -606,3 +629,4 @@ if __name__ == '__main__':
     server_config_file.close()
     setup_hadoop(ssh, sftp, servers, ssh_connect_info)
     run_tests(ssh_connect_info)
+    get_results(ssh_connect_info)
