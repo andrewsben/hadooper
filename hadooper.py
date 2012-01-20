@@ -111,7 +111,7 @@ def connect_to_server(ssh_connect_info, port=22, get_ftp=True):
 
 def run_tests(ssh_connect_info):
 
-    print "Starting test"
+    print "Starting tests"
     time.sleep(60)
 
     for file in glob.glob('Transfer/Tests/*'):
@@ -207,7 +207,7 @@ def create_sec_groups(create_new):
     hadoop_master = 'hadoop_master'
     hadoop_slave = 'hadoop_slave'
 
-    if create_new.lower() in ['0', 'f', 'false', 'no', 'off']:
+    if type(create_new) != type(False) and create_new.lower() in ['0', 'f', 'false', 'no', 'off']:
         create_new = False
 
     if not create_new:
@@ -339,7 +339,6 @@ def ConfigSectionMap(section):
                 if dict1[option] == -1:
                     DebugPrint("skip: %s" % option)
             except Exception as ex:
-                print "hey hey hey"
                 print("exception on %s!" % option)
                 dict1[option] = None
     return dict1
@@ -374,8 +373,8 @@ def get_flavor(flavor_name):
 def assign_floating_ip(server_name):
     server = False
     for s in nc.servers.list():
-		if s.name == server_name:
-			server = s
+        if s.name == server_name:
+            server = s
 
     if server:
         ip = get_floating_ip()
@@ -564,6 +563,8 @@ if __name__ == '__main__':
 
     nc = return_nova_object(args)
     master_sec_group_id, slave_sec_group_id = create_sec_groups(args['security'])
+    if not slave_sec_group_id or not master_sec_group_id:
+        master_sec_group_id, slave_sec_group_id = create_sec_groups(True)
     nova_key = get_or_create_key(args['key'])
     
     image = get_image(args['image'])
